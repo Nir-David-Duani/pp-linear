@@ -1,0 +1,22 @@
+name: Java CI
+
+on:
+  pull_request:
+    branches: [ main ]
+  push:
+    branches: [ dev ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Java
+        uses: actions/setup-java@v3
+        with:
+          java-version: '17'
+
+      - name: Compile Java
+        run: javac src/*.java
