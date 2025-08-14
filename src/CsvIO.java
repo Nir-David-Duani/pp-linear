@@ -1,65 +1,61 @@
-import java.io.IOException;
-import java.nio.charset.Charset;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Path;
+import java.nio.file.*;
+import java.io.*;
+import java.util.*;
 
-public final class CsvIO {
+public class CsvIO {
 
-    /** תוצאת הקריאה: שמות טקסונים, שמות תווים, ומטריצה בינארית */
-    public static final class ReadResult {
-        public final String[] taxa;
-        public final String[] characters;
-        public final int[][] C;
-
-        public ReadResult(String[] taxa, String[] characters, int[][] C) {
-            this.taxa = taxa;
-            this.characters = characters;
-            this.C = C;
+    /** Container for the matrix and names. */
+    public static class Data {
+        public String[] taxa;   // length n
+        public String[] chars;  // length m
+        public int[][]  C;      // n x m (0/1)
+        public int n, m;
+        public Data(String[] taxa, String[] chars, int[][] C) {
+            this.taxa = taxa; this.chars = chars; this.C = C;
+            this.n = taxa.length; this.m = chars.length;
         }
     }
 
-    /** חריגת פורמט CSV (ערכים שאינם 0/1, כותרת חסרה וכו') */
-    public static class CsvFormatException extends Exception {
-        public CsvFormatException(String message) { super(message); }
-        public CsvFormatException(String message, Throwable cause) { super(message, cause); }
+    /**
+     * Read CSV: header must have first column named 'taxon'.
+     * Validate 0/1 entries. No quoted commas support (keep it simple).
+     *
+     * TODO: implement real parsing.
+     */
+    public static Data read(Path csvPath) throws IOException {
+        // TODO: parse lines, build taxa[], chars[], C[][]
+        // Stub to compile:
+        String[] taxa = new String[0];
+        String[] chars = new String[0];
+        int[][] C = new int[0][0];
+        return new Data(taxa, chars, C);
     }
 
-    /** אפשרויות קריאה (לא חובה להשתמש בכולן) */
-    public static final class Options {
-        public final Charset charset;
-        public final char delimiter;
-        public final boolean dropAllZeroColumns;
-
-        private Options(Charset charset, char delimiter, boolean dropAllZeroColumns) {
-            this.charset = charset;
-            this.delimiter = delimiter;
-            this.dropAllZeroColumns = dropAllZeroColumns;
+    /** Write splits.csv with two columns: character,clade (space-separated taxa). */
+    public static void writeSplits(Path outCsv, String[] sortedChars, List<String>[] splitTaxa) throws IOException {
+        // TODO: open writer and dump rows. Each row: charName + "," + joinedTaxa
+        try (BufferedWriter bw = Files.newBufferedWriter(outCsv)) {
+            bw.write("character,clade\n");
+            if (sortedChars != null && splitTaxa != null) {
+                for (int i = 0; i < sortedChars.length; i++) {
+                    String name = sortedChars[i] == null ? "" : sortedChars[i];
+                    List<String> lst = (splitTaxa[i] == null) ? Collections.emptyList() : splitTaxa[i];
+                    String clade = String.join(" ", lst);
+                    bw.write(name + "," + clade + "\n");
+                }
+            }
         }
-
-        public static class Builder {
-            private Charset charset = StandardCharsets.UTF_8;
-            private char delimiter = ',';
-            private boolean dropAllZeroColumns = true;
-
-            public Builder charset(Charset c) { this.charset = c; return this; }
-            public Builder delimiter(char d) { this.delimiter = d; return this; }
-            public Builder dropAllZeroColumns(boolean b) { this.dropAllZeroColumns = b; return this; }
-            public Options build() { return new Options(charset, delimiter, dropAllZeroColumns); }
-        }
     }
 
-    /** API נוח ללא Options (משתמש בברירות מחדל) */
-    public static ReadResult readCsv(Path csvPath) throws IOException, CsvFormatException {
-        // TODO: קרא קובץ באמצעות הספרייה שתבחר (למשל Apache Commons CSV)
-        // החזר new ReadResult(taxa, characters, C);
-        throw new UnsupportedOperationException("TODO: implement CsvIO.readCsv(Path)");
+    /** Write witness.txt with a single short line ("OK" or a conflict message). */
+    public static void writeWitness(Path outTxt, String msg) throws IOException {
+        // TODO: you may add more structured info if you like
+        Files.writeString(outTxt, (msg == null ? "" : msg) + "\n");
     }
 
-    /** API עם Options (קידוד, מפריד, סינון עמודות-אפס) */
-    public static ReadResult readCsv(Path csvPath, Options options) throws IOException, CsvFormatException {
-        // TODO: כמו readCsv הרגיל, רק בהתחשב ב-options
-        throw new UnsupportedOperationException("TODO: implement CsvIO.readCsv(Path, Options)");
+    // --- helper (optional) ---
+    static String[] splitCsv(String line) {
+        // TODO: if you want to support quotes, expand this. For now: simple split on commas.
+        return line.split("\\s*,\\s*");
     }
-
-    private CsvIO() {} // no instances
 }
