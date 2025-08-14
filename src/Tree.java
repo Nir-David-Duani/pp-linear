@@ -1,59 +1,49 @@
-import java.nio.file.Path;
+import java.util.*;
 
-public final class Tree {
+/** Minimal unrooted tree model + edge labels + Newick writer (SKELETON). */
+public class Tree {
+    static class Node { int id; String name; Node(int id, String name){ this.id=id; this.name=name; } }
+    static class Edge { int u,v; String label; Edge(int u,int v,String label){ this.u=u; this.v=v; this.label=label; } }
 
-    /** ייצוג צומת (שלד בלבד) */
-    public static final class Node {
-        public final int id;
-        public final boolean isLeaf;
-        public final Integer taxonIndex; // null אם פנימי
-        public Node(int id, boolean isLeaf, Integer taxonIndex) {
-            this.id = id;
-            this.isLeaf = isLeaf;
-            this.taxonIndex = taxonIndex;
-        }
+    private int nextId = 0;
+    private final Map<Integer, Node> nodes = new HashMap<>();
+    private final Map<Integer, List<Edge>> adj = new HashMap<>();
+    private final Map<Long, List<String>> edgeLabels = new HashMap<>(); // for co-labels
+
+    // Optional: clade-id → node-id mapping if you want Algo to address clades by id
+    private final Map<Integer, Integer> cladeToNode = new HashMap<>();
+
+    // --- construction primitives ---
+    public int makeInternal(){
+        int id = nextId++; nodes.put(id, new Node(id, null)); adj.put(id, new ArrayList<>()); return id;
+    }
+    public int makeLeaf(String name){
+        int id = nextId++; nodes.put(id, new Node(id, name)); adj.put(id, new ArrayList<>()); return id;
     }
 
-    /** ייצוג קשת (שלד בלבד) */
-    public static final class Edge {
-        public final int u;
-        public final int v;
-        // TODO: שמור כאן רשימת תווים (co-labels) אם תרצה
-        public Edge(int u, int v) {
-            this.u = u;
-            this.v = v;
-        }
+    // --- API used by Algo (fill as needed) ---
+    public void attachColabelToClade(int cladeId, String label){
+        // TODO: decide how to map cladeId→node, and attach label on an existing incident edge
+    }
+    public void connectClades(int cladeA, int cladeB, String label){
+        // TODO: add an undirected edge between the two clade-nodes and store label
+    }
+    public void connectCladeToLeaf(int cladeId, int leafNode){
+        // TODO: connect clade-node to this (already created) leaf
     }
 
-    // TODO: אחסן כאן מבני נתונים של nodes/edges לפי העדפה שלך
-
-    /** הוספת קשת חדשה עם תו אחד (שלד) */
-    public int addEdge(int nodeA, int nodeB, int characterIndex) {
-        // TODO: צור קשת, שמור characterIndex כתווית, והחזר מזהה קשת
-        throw new UnsupportedOperationException("TODO: implement Tree.addEdge");
+    public void contractDegreeTwoNodes(){
+        // TODO: optional simplification – repeatedly contract internal nodes of degree 2
     }
 
-    /** הוספת תו נוסף כ-co-label על קשת קיימת (שלד) */
-    public void addCoLabel(int edgeId, int characterIndex) {
-        // TODO: הוסף characterIndex לרשימת התוויות של הקשת
-        throw new UnsupportedOperationException("TODO: implement Tree.addCoLabel");
+    public String toNewickUnrooted(){
+        // TODO: DFS print; pick an arbitrary node as root; sanitize names by replacing spaces/commas
+        return "();";
     }
 
-    /** אם נוצר root בדרגה 2, אפשר להתיך אותו (כדי להשאיר עץ לא-מכוון נקי) */
-    public void contractDegree2Root() {
-        // TODO
-        throw new UnsupportedOperationException("TODO: implement Tree.contractDegree2Root");
-    }
-
-    /** כתיבת קובץ Newick */
-    public void writeNewick(Path outFile) {
-        // TODO: סדר את המבנה וכתוב Newick לא מכוון
-        throw new UnsupportedOperationException("TODO: implement Tree.writeNewick");
-    }
-
-    /** כתיבת splits.csv */
-    public void writeSplits(Path outFile, String[] characters) {
-        // TODO: עבור כל תו, כתוב את הפיצול שהוא משרה; נהל גם co-labels
-        throw new UnsupportedOperationException("TODO: implement Tree.writeSplits");
+    // --- helpers you may use ---
+    private static long key(int a, int b){ if (a>b){int t=a;a=b;b=t;} return (((long)a)<<32) ^ (long)b; }
+    private void addUndirectedEdge(int u, int v, String label){
+        // TODO: add to adj for both u and v; if label!=null record in edgeLabels
     }
 }
