@@ -1,60 +1,47 @@
-# pp-linear — Unrooted Perfect Phylogeny (O(nm))
+# Unrooted Perfect Phylogeny (PP-linear)
 
-Implementation skeleton for reconstructing an **unrooted perfect phylogeny** from a binary matrix using a linear-time (O(nm)) pipeline:
+A full implementation of the unrooted Perfect Phylogeny algorithm in O(n·m) time (Java).
+The system reads a binary matrix from a CSV file, performs stable radix sort on columns, builds an unrooted phylogenetic tree, and produces standard outputs (Newick, splits.csv, witness).
 
-1. **Normalize by reference taxon** (flip columns where first taxon has 1 → top row becomes all zeros).
-2. **Radix sort columns** lexicographically (stable, bottom-up; identical columns become adjacent; supersets follow subsets).
-3. **Iterative partition refinement** over clades (Conflict / Co‑label / Split).
-4. **Outputs**: All output files are written to the `out` directory, which is created automatically if missing:
-    - `out/tree_unrooted.nwk` — Newick string of the unrooted topology (with edge labels)
-    - `out/splits.csv` — character-to-clade mapping
-    - `out/witness.txt` — conflict report or OK
+## Project Structure
 
 ```
 pp-linear/
 ├─ data/
-│   └─ input.csv             # taxon,C1,C2,... (first row = header, first taxon row = reference)
-├─ out/                      # created on run
+│   └─ input.csv             # Input CSV file (taxon,C1,C2,...)
+├─ out/                      # Output directory (created automatically)
 └─ src/
-    ├─ App.java              # main entry point
-    ├─ CsvIO.java            # CSV I/O and simple helpers
-    ├─ Algo.java             # algorithm pipeline 
-    └─ Tree.java             # unrooted tree model + Newick + writers 
+    ├─ App.java              # Main entry point
+    ├─ CsvIO.java            # Input reading and helpers
+    ├─ Algo.java             # Algorithm implementation
+    └─ Tree.java             # Tree building + Newick + splits writers
 ```
 
-## Build & Run
+## Usage
 
-```powershell
-# From the project root:
-javac -encoding UTF-8 -source 17 -target 17 -d out src/*.java
-java -cp out App
-```
+1. Place your input CSV file in the `data/` directory as `input.csv`.
+2. Run the program (`App.java`).
+3. Outputs will appear in the `out/` directory.
 
-By default, the program reads `data/input.csv` and writes all outputs to the `out/` directory.
-To run with a different input file, replace `data/input.csv` with your desired file (for example, copy or rename your file to `data/input.csv`), then run the program as usual.
+## Input Format
 
-If you want support for specifying the input file name as a command-line argument, let me know and I will add it to both the code and README.
+- Header row: first column is `taxon`, followed by character names (C1,C2,C3,...).
+- Each row: taxon name (no commas), followed by 0/1 for each character.
 
-## Input format
-
-- CSV header: first column **taxon**, then character names in the format C1,C2,C3,... (each character must be named exactly C1, C2, C3, ... in order; other names are not allowed)
-- Each next row: a taxon name (no commas), followed by `0/1` per character
-- The **first taxon row** acts as reference for normalization (flip any column where it has `1`).
-
-**Important:** The input file must use character names in the format C1, C2, C3, ... (no other names are allowed). All outputs will use these names for edge labels and splits.
+**Important:** Character names must be exactly C1, C2, C3, ... in order.
 
 ## Outputs
 
-All output files are written to the `out` directory:
+- `tree_unrooted.nwk` — Phylogenetic tree in Newick format.
+- `splits.csv` — Splits: character,clade.
+- `witness.txt` — "OK" if no conflict, otherwise an explanation.
+- `sorted_matrix.csv` — Sorted matrix (for debugging).
 
-- `tree_unrooted.nwk` — Newick string of the unrooted topology, with edge labels for each character.
-- `splits.csv` — each character followed by the clade (set of taxa) it defines; identical columns appear as co‑labels.
-- `witness.txt` — `OK` if perfect; otherwise a short explanation with a minimal conflicting pair.
+## Error Handling
+
+If the input is not compatible with the algorithm (conflict between characters), an explanation will appear in `witness.txt`.
 
 ## Notes
-
-- Deterministic: ties resolved by fixed indices/order.
-- All‑zero columns are ignored.
-- Java 17+, UTF‑8 CSVs.
-
----
+- The algorithm is deterministic (fixed order for ties).
+- All-zero columns are ignored.
+- Requires Java 17+, UTF-8 CSV files.
