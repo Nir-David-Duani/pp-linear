@@ -9,6 +9,10 @@ target/
 build/
 out/
 
+# Optional: keep out/ tracked but empty
+out/*
+!out/.gitkeep
+
 # IDE specific files
 .idea/
 *.iml
@@ -21,5 +25,6 @@ out/
 .DS_Store
 Thumbs.db
 
-# Output folder
-out/
+# Temporary / swap files
+*.tmp
+*.swp
