@@ -15,9 +15,13 @@ public final class Algo {
   /** Thrown when input is not a perfect phylogeny. */
   public static final class NotPerfectPhylogenyException extends Exception {
     public final List<String> witnessChars; // minimal set if you have it, else singleton
-    public NotPerfectPhylogenyException(String message, List<String> witnessChars) {
+    public final SortResult sortResult;
+    public final Map<String, Set<String>> splitsByChar;
+    public NotPerfectPhylogenyException(String message, List<String> witnessChars, SortResult sortResult, Map<String, Set<String>> splitsByChar) {
       super(message);
       this.witnessChars = witnessChars;
+      this.sortResult = sortResult;
+      this.splitsByChar = splitsByChar;
     }
   }
 
@@ -71,7 +75,13 @@ public final class Algo {
   /** Full pipeline: radix sort -> iterative build (first->last). */
   public static BuildResult run(CsvIO.Data data) throws NotPerfectPhylogenyException {
     SortResult sr = radixSortColumns(data.C, data.chars);
-    BuildArtifacts A = buildArtifacts(sr.Csorted, sr.charsSorted, data.taxa);
+    BuildArtifacts A;
+    try {
+      A = buildArtifacts(sr.Csorted, sr.charsSorted, data.taxa);
+    } catch (NotPerfectPhylogenyException ex) {
+      // rethrow with sortResult and splitsByChar
+      throw new NotPerfectPhylogenyException(ex.getMessage(), ex.witnessChars, sr, ex.splitsByChar);
+    }
     return new BuildResult(A.nodes, A.edges, A.edgeLabels, A.splitsByChar, sr, (A.conflict == null ? "OK" : A.conflict));
   }
 
@@ -130,7 +140,7 @@ public final class Algo {
 
   /** Partition refinement from first->last column; builds graph artifacts. */
   public static BuildArtifacts buildArtifacts(int[][] C, String[] chars, String[] taxaNames)
-      throws NotPerfectPhylogenyException {
+  throws NotPerfectPhylogenyException {
     int n = C.length, m = C[0].length;
 
     // initial single block with all taxa
@@ -156,15 +166,15 @@ public final class Algo {
         if (!disjoint(b.taxa, Oj)) touched.add(b);
       }
       if (touched.size() == 0) {
-        throw new NotPerfectPhylogenyException("Internal error: character " + chars[j] + " touches no block", List.of(chars[j]));
+        throw new NotPerfectPhylogenyException("Internal error: character " + chars[j] + " touches no block", List.of(chars[j]), null, A.splitsByChar);
       }
       if (touched.size() > 1) {
-        throw new NotPerfectPhylogenyException("Conflict at character " + chars[j] + " (intersects multiple clades)", List.of(chars[j]));
+        throw new NotPerfectPhylogenyException("Conflict at character " + chars[j] + " (intersects multiple clades)", List.of(chars[j]), null, A.splitsByChar);
       }
 
       Block parent = touched.get(0);
       if (!parent.taxa.containsAll(Oj)) {
-        throw new NotPerfectPhylogenyException("Conflict at character " + chars[j] + " (not contained in a single clade)", List.of(chars[j]));
+        throw new NotPerfectPhylogenyException("Conflict at character " + chars[j] + " (not contained in a single clade)", List.of(chars[j]), null, A.splitsByChar);
       }
 
       // always record split for splits.csv

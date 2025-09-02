@@ -66,6 +66,10 @@ public final class Tree {
       parts.add(dfsNewick(v, u, seen, taxaNames));
     }
 
+    // אם יש יותר מאחד בבלוק ואין שכנים, נשים את כולם בסוגריים
+    if (nodes.get(u).neighbors.size() == 1 && parts.size() > 1) {
+      return "(" + String.join(",", parts) + ")";
+    }
     if (parts.size() == 1) return parts.get(0);       // leaf or single taxon
     return "(" + String.join(",", parts) + ")";       // internal
   }

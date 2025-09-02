@@ -12,8 +12,30 @@ public class App {
       res = Algo.run(data);
     } catch (Algo.NotPerfectPhylogenyException ex) {
       Files.createDirectories(Path.of("out"));
+      // witness.txt
       Files.writeString(Path.of("out/witness.txt"),
           "NOT A PERFECT PHYLOGENY\nconflict: " + String.join(",", ex.witnessChars) + "\n");
+      // tree_unrooted.nwk - ריק
+      Files.writeString(Path.of("out/tree_unrooted.nwk"), "");
+      // sorted_matrix.csv
+      if (ex.sortResult != null) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("taxon,").append(String.join(",", ex.sortResult.charsSorted)).append("\n");
+        for (int i = 0; i < data.taxa.length; i++) {
+          sb.append(data.taxa[i]);
+          for (int j = 0; j < ex.sortResult.Csorted[0].length; j++) sb.append(",").append(ex.sortResult.Csorted[i][j]);
+          sb.append("\n");
+        }
+        Files.writeString(Path.of("out/sorted_matrix.csv"), sb.toString());
+      } else {
+        Files.writeString(Path.of("out/sorted_matrix.csv"), "");
+      }
+      // splits.csv
+      List<String> csv = ex.splitsByChar != null ? Tree.formatSplitsCsv(ex.splitsByChar) : new ArrayList<>();
+      if (!csv.isEmpty()) {
+        csv.set(0, csv.get(0) + ",NOT A PERFECT PHYLOGENY");
+      }
+      Files.write(Path.of("out/splits.csv"), csv);
       System.err.println("Conflict: " + ex.getMessage());
       return;
     }
