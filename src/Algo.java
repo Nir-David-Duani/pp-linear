@@ -1,77 +1,224 @@
 import java.util.*;
 
-public class Algo {
+/**
+ * Unrooted Perfect Phylogeny in O(n*m).
+ * 1) radixSortColumns: stable bottom-up radix; per row put '1' before '0' (supersets first).
+ * 2) buildArtifacts: iterate columns left->right; maintain a partition of taxa (blocks),
+ *    do split / co-label / conflict; construct graph artifacts for Tree + splits.
+ */
+public final class Algo {
 
-    // -------- Stage 1: Normalization --------
+  /* ========================
+   * Exceptions & Data Types
+   * ======================== */
 
-    /** Flip each column j where C[0][j] == 1 so the top row becomes all zeros. */
-    public static void normalizeByFirstRow(CsvIO.Data data) {
-        // TODO: implement in-place flip (0<->1) per column where first taxon has 1
+  /** Thrown when input is not a perfect phylogeny. */
+  public static final class NotPerfectPhylogenyException extends Exception {
+    public final List<String> witnessChars; // minimal set if you have it, else singleton
+    public NotPerfectPhylogenyException(String message, List<String> witnessChars) {
+      super(message);
+      this.witnessChars = witnessChars;
+    }
+  }
+
+  /** Result of the radix sort. */
+  public static final class SortResult {
+    public final int[][] Csorted;        // n x m matrix with columns permuted
+    public final String[] charsSorted;   // character names in sorted order
+    public final int[] columnOrder;      // columnOrder[k] = original index for sorted column k (0-based)
+    public SortResult(int[][] Csorted, String[] charsSorted, int[] columnOrder) {
+      this.Csorted = Csorted; this.charsSorted = charsSorted; this.columnOrder = columnOrder;
+    }
+  }
+
+  /** Final artifacts to feed Tree + csv writers + witness. */
+  public static final class BuildResult {
+    // Graph artifacts for Tree.fromArtifacts(...)
+    public final List<Set<Integer>> nodesTaxa;          // nodeId -> set of taxa indices in that block
+    public final List<int[]> edges;                     // undirected edges [u,v]
+    public final Map<Integer, List<String>> edgeLabels; // edgeId -> list of character labels (from splits)
+
+    // For splits.csv
+    public final Map<String, Set<String>> splitsByChar; // "Cj" -> taxa name set for Oj
+
+    // Sorting info
+    public final SortResult sort;
+
+    // Witness text ("OK" or explanation)
+    public final String witness;
+
+    public BuildResult(
+        List<Set<Integer>> nodesTaxa,
+        List<int[]> edges,
+        Map<Integer, List<String>> edgeLabels,
+        Map<String, Set<String>> splitsByChar,
+        SortResult sort,
+        String witness
+    ) {
+      this.nodesTaxa = nodesTaxa;
+      this.edges = edges;
+      this.edgeLabels = edgeLabels;
+      this.splitsByChar = splitsByChar;
+      this.sort = sort;
+      this.witness = witness;
+    }
+  }
+
+  /* ====================
+   * Public entry point
+   * ==================== */
+
+  /** Full pipeline: radix sort -> iterative build (first->last). */
+  public static BuildResult run(CsvIO.Data data) throws NotPerfectPhylogenyException {
+    SortResult sr = radixSortColumns(data.C, data.chars);
+    BuildArtifacts A = buildArtifacts(sr.Csorted, sr.charsSorted, data.taxa);
+    return new BuildResult(A.nodes, A.edges, A.edgeLabels, A.splitsByChar, sr, (A.conflict == null ? "OK" : A.conflict));
+  }
+
+  /* =========================
+   * Step 1: stable radix sort
+   * ========================= */
+
+  /**
+   * Stable bottom-up radix: for each row from bottom to top, do a stable counting pass
+   * where bucket(1) comes BEFORE bucket(0). That pushes columns with more/high 1-patterns
+   * earlier in lexicographic order => supersets (larger 1-sets) appear first (leftmost).
+   */
+  public static SortResult radixSortColumns(int[][] C, String[] chars) {
+    int n = C.length; if (n == 0) throw new IllegalArgumentException("Empty matrix");
+    int m = C[0].length;
+
+    int[] order = new int[m];
+    for (int j = 0; j < m; j++) order[j] = j;
+
+    int[] tmp = new int[m];
+    for (int row = n - 1; row >= 0; row--) {
+      int ones = 0; for (int idx : order) if (C[row][idx] == 1) ones++;
+      int pos1 = 0, pos0 = ones; // 1's first, then 0's (stable)
+      for (int idx : order) {
+        if (C[row][idx] == 1) tmp[pos1++] = idx;
+        else                  tmp[pos0++] = idx;
+      }
+      order = java.util.Arrays.copyOf(tmp, m);
     }
 
-    /** Remove all-zero columns; compact data.chars and data.C; update data.m. */
-    public static void dropAllZeroColumns(CsvIO.Data data) {
-        // TODO: scan columns, keep only those with at least one 1
+    int[][] sorted = new int[n][m];
+    String[] cs = new String[m];
+    for (int j = 0; j < m; j++) {
+      int src = order[j];
+      cs[j] = chars[src];
+      for (int i = 0; i < n; i++) sorted[i][j] = C[i][src];
+    }
+    return new SortResult(sorted, cs, order);
+  }
+
+  /* ==========================
+   * Step 2: iterative building
+   * ========================== */
+
+  private static final class Block {
+    final java.util.LinkedHashSet<Integer> taxa = new java.util.LinkedHashSet<>();
+    Block(java.util.Collection<Integer> s) { this.taxa.addAll(s); }
+  }
+  private static final class BuildArtifacts {
+    final List<Set<Integer>> nodes = new ArrayList<>();
+    final List<int[]> edges = new ArrayList<>();
+    final Map<Integer, List<String>> edgeLabels = new HashMap<>();
+    final Map<String, Set<String>> splitsByChar = new java.util.LinkedHashMap<>();
+    String conflict = null;
+  }
+
+  /** Partition refinement from first->last column; builds graph artifacts. */
+  public static BuildArtifacts buildArtifacts(int[][] C, String[] chars, String[] taxaNames)
+      throws NotPerfectPhylogenyException {
+    int n = C.length, m = C[0].length;
+
+    // initial single block with all taxa
+    List<Block> blocks = new ArrayList<>();
+    Block root = new Block(range(n));
+    blocks.add(root);
+
+    // graph nodes: node 0 represents the current "rest" world (initially all taxa)
+    BuildArtifacts A = new BuildArtifacts();
+    A.nodes.add(new java.util.LinkedHashSet<>(root.taxa)); // node 0
+    Map<Block, Integer> nodeId = new IdentityHashMap<>();
+    nodeId.put(root, 0);
+
+    // process columns first -> last
+    for (int j = 0; j < m; j++) {
+      java.util.LinkedHashSet<Integer> Oj = new java.util.LinkedHashSet<>();
+      for (int i = 0; i < n; i++) if (C[i][j] == 1) Oj.add(i);
+      if (Oj.isEmpty()) continue; // ignore all-zero
+
+      // find touched blocks
+      List<Block> touched = new ArrayList<>();
+      for (Block b : blocks) {
+        if (!disjoint(b.taxa, Oj)) touched.add(b);
+      }
+      if (touched.size() == 0) {
+        throw new NotPerfectPhylogenyException("Internal error: character " + chars[j] + " touches no block", List.of(chars[j]));
+      }
+      if (touched.size() > 1) {
+        throw new NotPerfectPhylogenyException("Conflict at character " + chars[j] + " (intersects multiple clades)", List.of(chars[j]));
+      }
+
+      Block parent = touched.get(0);
+      if (!parent.taxa.containsAll(Oj)) {
+        throw new NotPerfectPhylogenyException("Conflict at character " + chars[j] + " (not contained in a single clade)", List.of(chars[j]));
+      }
+
+      // always record split for splits.csv
+      A.splitsByChar.put(chars[j], toTaxaNames(Oj, taxaNames));
+
+      if (Oj.equals(parent.taxa)) {
+        // co-label case: no structural change
+        continue;
+      }
+
+      // split parent into Rest and Oj
+      java.util.LinkedHashSet<Integer> rest = new java.util.LinkedHashSet<>(parent.taxa);
+      rest.removeAll(Oj);
+
+      // reuse parent's node for Rest (keeps prior connectivity)
+      int parentNode = nodeId.get(parent);
+      A.nodes.set(parentNode, rest);
+
+      // new node for Oj
+      int childNode = A.nodes.size();
+      A.nodes.add(new java.util.LinkedHashSet<>(Oj));
+
+      // add undirected edge labeled with current character
+      int eId = A.edges.size();
+      A.edges.add(new int[]{parentNode, childNode});
+      A.edgeLabels.computeIfAbsent(eId, k -> new ArrayList<>()).add(chars[j]);
+
+      // update partition
+      Block bRest = new Block(rest);
+      Block bOj   = new Block(Oj);
+      int idx = blocks.indexOf(parent);
+      blocks.remove(idx);
+      blocks.add(bRest);
+      blocks.add(bOj);
+      nodeId.remove(parent);
+      nodeId.put(bRest, parentNode);
+      nodeId.put(bOj, childNode);
     }
 
-    // -------- Stage 2: Radix sort (stable, bottom-up) --------
+    return A;
+  }
 
-    /**
-     * Compute a stable lexicographic order of columns by performing a pass for each row
-     * from bottom to top (binary counting-sort per pass). Return array of column indices.
-     */
-    public static int[] radixOrder(CsvIO.Data data) {
-        // TODO: implement binary stable partition on each pass
-        // Stub:
-        int[] order = new int[data.m];
-        for (int j = 0; j < data.m; j++) order[j] = j;
-        return order;
-    }
-
-    /** Apply the given column order to data.C and data.chars (in-place repack). */
-    public static void applyColumnOrder(CsvIO.Data data, int[] order) {
-        // TODO: rebuild arrays in the new order
-    }
-
-    // -------- Stage 3: Partition refinement --------
-
-    public static class BuildResult {
-        public final boolean isPerfect;
-        public final String witnessMessage; // "OK" if perfect; short conflict otherwise
-        public final String[] sortedChars;
-        public final List<String>[] splitTaxa; // per character: taxa with 1
-        public final Tree tree;
-        public BuildResult(boolean ok, String msg, String[] sortedChars, List<String>[] splitTaxa, Tree tree) {
-            this.isPerfect = ok; this.witnessMessage = msg; this.sortedChars = sortedChars; this.splitTaxa = splitTaxa; this.tree = tree;
-        }
-    }
-
-    /**
-     * Build unrooted PP via iterative refinement over clades.
-     * Steps per character j (after sorting):
-     *  - Oj = taxa with 1 in column j
-     *  - find containing clade (conflict if spans >1)
-     *  - if Oj equals the clade ⇒ co-label; else split and connect with edge label j
-     *  - after all columns, attach leaves and contract deg-2 nodes
-     */
-    public static BuildResult buildUnrootedPP(CsvIO.Data data) {
-        // TODO: implement full refinement
-        // Minimal stub to compile and allow end-to-end wiring in App:
-        Tree t = new Tree();
-        // you may want to do: int root = t.makeInternal(); ...
-        @SuppressWarnings("unchecked")
-        List<String>[] splits = new List[data.m];
-        String[] names = data.chars;
-        boolean ok = false; // change to true when implemented
-        String msg = "TODO: buildUnrootedPP not yet implemented";
-        return new BuildResult(ok, msg, names == null ? new String[0] : names, splits, t);
-    }
-
-    // ---- helper suggestions (implement or adjust as you like) ----
-    static int[] onesSet(int[][] C, int col) { /* TODO */ return new int[0]; }
-    static int findContainingClade(List<int[]> clades, int[] cladeOfTaxon, int[] Oj) { /* TODO */ return -1; }
-    static boolean equalsSet(int[] A, int[] B) { /* TODO */ return false; }
-    static int splitClade(List<int[]> clades, int[] cladeOfTaxon, int cl, int[] Oj) { /* TODO */ return -1; }
-    static String minimalConflictMsg(String cj, int[] Oj, List<String> prevChars, List<int[]> prevO, String[] taxaNames) { /* TODO */ return "Conflict: TODO"; }
+  /* ============
+   * Small helpers
+   * ============ */
+  private static List<Integer> range(int n) { List<Integer> r = new ArrayList<>(n); for (int i=0;i<n;i++) r.add(i); return r; }
+  private static boolean disjoint(Set<Integer> a, Set<Integer> b) {
+    if (a.size() > b.size()) { Set<Integer> t = a; a = b; b = t; }
+    for (Integer x : a) if (b.contains(x)) return false;
+    return true;
+  }
+  private static Set<String> toTaxaNames(Set<Integer> idxs, String[] names) {
+    java.util.LinkedHashSet<String> s = new java.util.LinkedHashSet<>();
+    for (int i : idxs) s.add(names[i]);
+    return s;
+  }
 }
-

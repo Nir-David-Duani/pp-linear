@@ -1,49 +1,87 @@
 import java.util.*;
 
-/** Minimal unrooted tree model + edge labels + Newick writer (SKELETON). */
-public class Tree {
-    static class Node { int id; String name; Node(int id, String name){ this.id=id; this.name=name; } }
-    static class Edge { int u,v; String label; Edge(int u,int v,String label){ this.u=u; this.v=v; this.label=label; } }
+/** Minimal unrooted tree with labeled edges (co-labels supported). */
+public final class Tree {
 
-    private int nextId = 0;
-    private final Map<Integer, Node> nodes = new HashMap<>();
-    private final Map<Integer, List<Edge>> adj = new HashMap<>();
-    private final Map<Long, List<String>> edgeLabels = new HashMap<>(); // for co-labels
+  public static final class Node {
+    public final int id;
+    public final Set<Integer> taxa = new LinkedHashSet<>(); // indices of taxa in this block
+    public final List<Integer> neighbors = new ArrayList<>();
+    Node(int id) { this.id = id; }
+  }
 
-    // Optional: clade-id → node-id mapping if you want Algo to address clades by id
-    private final Map<Integer, Integer> cladeToNode = new HashMap<>();
+  public static final class Edge {
+    public final int u, v;                  // node ids
+    public final List<String> labels;       // characters labeling this split (co-labels)
+    Edge(int u, int v, List<String> labels) { this.u=u; this.v=v; this.labels = labels; }
+  }
 
-    // --- construction primitives ---
-    public int makeInternal(){
-        int id = nextId++; nodes.put(id, new Node(id, null)); adj.put(id, new ArrayList<>()); return id;
+  public final List<Node> nodes = new ArrayList<>();
+  public final List<Edge> edges = new ArrayList<>();
+
+  /** Build Tree from Algo artifacts. */
+  public static Tree fromArtifacts(
+      List<Set<Integer>> nodesTaxa,
+      List<int[]> edges,
+      Map<Integer, List<String>> edgeLabels
+  ) {
+    Tree t = new Tree();
+    for (int i = 0; i < nodesTaxa.size(); i++) {
+      Node nd = new Node(i);
+      nd.taxa.addAll(nodesTaxa.get(i));
+      t.nodes.add(nd);
     }
-    public int makeLeaf(String name){
-        int id = nextId++; nodes.put(id, new Node(id, name)); adj.put(id, new ArrayList<>()); return id;
+    for (int eId = 0; eId < edges.size(); eId++) {
+      int[] e = edges.get(eId);
+      int u = e[0], v = e[1];
+      List<String> labels = edgeLabels.getOrDefault(eId, List.of());
+      t.edges.add(new Edge(u, v, new ArrayList<>(labels)));
+      t.nodes.get(u).neighbors.add(v);
+      t.nodes.get(v).neighbors.add(u);
+    }
+    return t;
+  }
+
+  /** Render as Newick using any node of degree != 2 as root anchor (fallback: 0). */
+  public String toNewick(String[] taxaNames) {
+    // pick anchor
+    int root = 0;
+    for (Node nd : nodes) {
+      if (nd.neighbors.size() != 2) { root = nd.id; break; }
+    }
+    // DFS to produce Newick; treat blocks as internal and print leaves under them
+    boolean[] seen = new boolean[nodes.size()];
+    return dfsNewick(root, -1, seen, taxaNames) + ";";
+  }
+
+  private String dfsNewick(int u, int parent, boolean[] seen, String[] taxaNames) {
+    seen[u] = true;
+    List<String> parts = new ArrayList<>();
+
+    // attach taxa at this block as leaves
+    for (int ti : nodes.get(u).taxa) parts.add(taxaNames[ti]);
+
+    for (int v : nodes.get(u).neighbors) {
+      if (v == parent) continue;
+      parts.add(dfsNewick(v, u, seen, taxaNames));
     }
 
-    // --- API used by Algo (fill as needed) ---
-    public void attachColabelToClade(int cladeId, String label){
-        // TODO: decide how to map cladeId→node, and attach label on an existing incident edge
-    }
-    public void connectClades(int cladeA, int cladeB, String label){
-        // TODO: add an undirected edge between the two clade-nodes and store label
-    }
-    public void connectCladeToLeaf(int cladeId, int leafNode){
-        // TODO: connect clade-node to this (already created) leaf
-    }
+    if (parts.size() == 1) return parts.get(0);       // leaf or single taxon
+    return "(" + String.join(",", parts) + ")";       // internal
+  }
 
-    public void contractDegreeTwoNodes(){
-        // TODO: optional simplification – repeatedly contract internal nodes of degree 2
+  /** Write splits.csv lines: character,clade (e.g., "2,ABC"). */
+  public static List<String> formatSplitsCsv(Map<String, Set<String>> splits) {
+    List<String> out = new ArrayList<>();
+    out.add("character,clade");
+    for (var e : splits.entrySet()) {
+      // clade as concatenated names in stable order
+      List<String> list = new ArrayList<>(e.getValue());
+      Collections.sort(list);
+      // strip leading 'C' from "Cj" for the numeric field in CSV, per your examples
+      String charId = e.getKey().startsWith("C") ? e.getKey().substring(1) : e.getKey();
+      out.add(charId + "," + String.join("", list));
     }
-
-    public String toNewickUnrooted(){
-        // TODO: DFS print; pick an arbitrary node as root; sanitize names by replacing spaces/commas
-        return "();";
-    }
-
-    // --- helpers you may use ---
-    private static long key(int a, int b){ if (a>b){int t=a;a=b;b=t;} return (((long)a)<<32) ^ (long)b; }
-    private void addUndirectedEdge(int u, int v, String label){
-        // TODO: add to adj for both u and v; if label!=null record in edgeLabels
-    }
+    return out;
+  }
 }
