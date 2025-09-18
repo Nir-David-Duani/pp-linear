@@ -7,11 +7,7 @@
 # Build directories
 target/
 build/
-out/
-
-# Optional: keep out/ tracked but empty
-out/*
-!out/.gitkeep
+tests/results/
 
 # IDE specific files
 .idea/
