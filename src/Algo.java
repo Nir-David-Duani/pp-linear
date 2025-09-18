@@ -66,13 +66,10 @@ public final class Algo {
         Integer[] orderObj = new Integer[m];
         for (int j = 0; j < m; j++) orderObj[j] = j;
         
-        // Radix sort: sort by each row from bottom (n-1) to top (0)
+        // Radix sort: stable sort by each row from bottom (n-1) to top (0)
         for (int row = n - 1; row >= 0; row--) {
-            final int currentRow = row;
-            Arrays.sort(orderObj, (a, b) -> {
-                // Compare bit at current row: 0 comes before 1 (stable sort)
-                return Integer.compare(C[currentRow][a], C[currentRow][b]);
-            });
+            // Stable sort columns by current row values (0 before 1)
+            stableSortByRow(orderObj, C, row, m);
         }
         
         // Build result arrays
@@ -86,6 +83,32 @@ public final class Algo {
             for (int i = 0; i < n; i++) sorted[i][j] = C[i][src];
         }
         return new SortResult(sorted, cs, order);
+    }
+    
+    // Helper method for stable sorting columns by a specific row
+    private static void stableSortByRow(Integer[] order, int[][] C, int row, int m) {
+        // Create lists for 0s and 1s to maintain stability
+        List<Integer> zeros = new ArrayList<>();
+        List<Integer> ones = new ArrayList<>();
+        
+        // Partition columns based on value in current row
+        for (int j = 0; j < m; j++) {
+            int col = order[j];
+            if (C[row][col] == 0) {
+                zeros.add(col);
+            } else {
+                ones.add(col);
+            }
+        }
+        
+        // Merge back: 0s before 1s (stable sort)
+        int idx = 0;
+        for (int col : zeros) {
+            order[idx++] = col;
+        }
+        for (int col : ones) {
+            order[idx++] = col;
+        }
     }
 
     // Build tree artifacts
