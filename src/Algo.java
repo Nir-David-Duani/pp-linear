@@ -57,20 +57,25 @@ public final class Algo {
         return new BuildResult(A.nodes, A.edges, A.edgeLabels, A.splitsByChar, sr, (A.conflict == null ? "OK" : A.conflict));
     }
 
-    // Sort columns by number of 1s (descending)
+    // Sort columns using true radix sort (lexicographic order, bottom-to-top)
     public static SortResult radixSortColumns(int[][] C, String[] chars) {
         int n = C.length; if (n == 0) throw new IllegalArgumentException("Empty matrix");
         int m = C[0].length;
+        
+        // Initialize column order
         Integer[] orderObj = new Integer[m];
         for (int j = 0; j < m; j++) orderObj[j] = j;
-        Arrays.sort(orderObj, (a, b) -> {
-            int countA = 0, countB = 0;
-            for (int i = 0; i < n; i++) {
-                countA += C[i][a];
-                countB += C[i][b];
-            }
-            return Integer.compare(countB, countA);
-        });
+        
+        // Radix sort: sort by each row from bottom (n-1) to top (0)
+        for (int row = n - 1; row >= 0; row--) {
+            final int currentRow = row;
+            Arrays.sort(orderObj, (a, b) -> {
+                // Compare bit at current row: 0 comes before 1 (stable sort)
+                return Integer.compare(C[currentRow][a], C[currentRow][b]);
+            });
+        }
+        
+        // Build result arrays
         int[] order = new int[m];
         for (int j = 0; j < m; j++) order[j] = orderObj[j];
         int[][] sorted = new int[n][m];
@@ -108,7 +113,8 @@ public final class Algo {
         Map<Block, Integer> nodeId = new IdentityHashMap<>();
         nodeId.put(root, 0);
 
-        for (int j = 0; j < m; j++) {
+        // Process columns from last to first (reverse order for PP algorithm)
+        for (int j = m - 1; j >= 0; j--) {
             java.util.LinkedHashSet<Integer> Oj = new java.util.LinkedHashSet<>();
             for (int i = 0; i < n; i++) if (C[i][j] == 1) Oj.add(i);
             if (Oj.isEmpty()) continue;
